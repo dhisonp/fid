@@ -37,17 +37,21 @@ for (const id of ids) {
   assert.equal(count, 3, `${id}: ${count}`);
 }
 assert.equal(edition.stories.length, 9);
+const evidenceIds = new Set(edition.evidence.map((source) => source.id));
+for (const story of edition.stories) {
+  assert(story.evidence_ids.length > 0);
+  assert(story.evidence_ids.every((id) => evidenceIds.has(id)));
+  assert(!('claims' in story));
+  assert(!('paper' in story));
+}
 for (const evidence of edition.evidence) {
-  assert(evidence.retrieved_at <= edition.cutoff);
   assert.equal(new URL(evidence.url).protocol, 'https:');
   const archived = await request(`/api/evidence/${evidence.id}`);
   assert(archived.text.length >= 300);
-  for (const story of edition.stories) {
-    for (const claim of story.claims.filter(
-      (c) => c.evidence_id === evidence.id,
-    ))
-      assert(archived.text.includes(claim.quote));
-  }
+  assert(archived.retrieved_at <= edition.cutoff);
+  assert.equal(archived.id, evidence.id);
+  assert.equal(archived.url, evidence.url);
+  assert.deepEqual(archived.published, evidence.published);
 }
 const saved = await request(`/api/editions/${edition.date}`);
 assert.equal(saved.edition.published_at, edition.published_at);

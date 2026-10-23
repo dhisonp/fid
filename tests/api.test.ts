@@ -71,14 +71,7 @@ test('source dates retain precision; executable source URLs are rejected', () =>
   const evidence = {
     id: 'source',
     url: 'https://example.com/advisory',
-    source_id: 'origin',
-    title: 'Synthetic parsing fixture',
     published: { value: '2026-10-22', precision: 'day' },
-    updated: null,
-    first_seen: 1792750000,
-    retrieved_at: 1792750000,
-    content_hash: 'hash',
-    text: '',
   };
   const value = parseFeed({
     ...feed(),
@@ -94,5 +87,39 @@ test('source dates retain precision; executable source URLs are rejected', () =>
         evidence: [{ ...evidence, url: 'javascript:alert(1)' }],
       },
     }),
+  );
+});
+
+test('reader feeds need only source links and dates, without verification fields', () => {
+  const story = {
+    event_id: 'event',
+    category: 'security',
+    headline: 'A material change',
+    paragraphs: ['Affected scope and mitigation.'],
+    evidence_ids: ['source'],
+    label: 'new',
+    delta: '',
+    uncertainty: '',
+  };
+  const source = {
+    id: 'source',
+    url: 'https://example.com/advisory',
+    published: null,
+  };
+  const response = {
+    ...feed(),
+    status: 'available',
+    edition: { ...edition(), stories: [story], evidence: [source] },
+  };
+  const parsed = parseFeed(response);
+  assert.deepEqual(parsed.edition?.stories, [story]);
+  assert.deepEqual(parsed.edition?.evidence, [source]);
+  assert.throws(
+    () =>
+      parseFeed({
+        ...response,
+        edition: { ...response.edition, evidence: [] },
+      }),
+    /missing evidence/,
   );
 });

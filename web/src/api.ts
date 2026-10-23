@@ -12,14 +12,7 @@ export type SourceDate = { value: string; precision: 'day' | 'second' };
 export type Evidence = {
   id: string;
   url: string;
-  title: string;
-  source_id: string;
   published: SourceDate | null;
-  updated: SourceDate | null;
-  first_seen: number;
-  retrieved_at: number;
-  content_hash: string;
-  text: string;
 };
 export type Story = {
   event_id: string;
@@ -30,16 +23,6 @@ export type Story = {
   delta: string;
   uncertainty: string;
   evidence_ids: string[];
-  claims: { text: string; kind: string; evidence_id: string; quote: string }[];
-  paper: null | {
-    version: string;
-    status: string;
-    methods: string;
-    results: string;
-    limitations: string;
-    artifacts: string[];
-    executed: boolean;
-  };
 };
 export type Edition = {
   verification: boolean;
@@ -130,19 +113,11 @@ function parseEvidence(raw: unknown): Evidence {
   return {
     id: string(e.id),
     url: https(e.url),
-    title: string(e.title),
-    source_id: string(e.source_id),
     published: sourceDate(e.published),
-    updated: sourceDate(e.updated),
-    first_seen: timestamp(e.first_seen),
-    retrieved_at: timestamp(e.retrieved_at),
-    content_hash: string(e.content_hash),
-    text: string(e.text),
   };
 }
 function parseStory(raw: unknown): Story {
   const s = object(raw);
-  const p = s.paper === null ? null : object(s.paper);
   return {
     event_id: string(s.event_id),
     category: choice(
@@ -161,27 +136,6 @@ function parseStory(raw: unknown): Story {
     delta: string(s.delta),
     uncertainty: string(s.uncertainty),
     evidence_ids: array(s.evidence_ids, string),
-    claims: array(s.claims, (raw) => {
-      const c = object(raw);
-      return {
-        text: string(c.text),
-        kind: string(c.kind),
-        evidence_id: string(c.evidence_id),
-        quote: string(c.quote),
-      };
-    }),
-    paper:
-      p === null
-        ? null
-        : {
-            version: string(p.version),
-            status: string(p.status),
-            methods: string(p.methods),
-            results: string(p.results),
-            limitations: string(p.limitations),
-            artifacts: array(p.artifacts, https),
-            executed: p.executed === true,
-          },
   };
 }
 export function parseFeed(raw: unknown): Feed {

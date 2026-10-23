@@ -10,7 +10,7 @@ mod types;
 
 use crate::{
     store::{error, Store},
-    types::{Draft, Edition},
+    types::{Draft, PublicEdition},
 };
 use chrono::NaiveDate;
 use serde::Deserialize;
@@ -109,13 +109,6 @@ fn authorized(request: &Request, env: &Env) -> Result<bool> {
         == 0)
 }
 
-fn public_edition(mut edition: Edition) -> Edition {
-    for evidence in &mut edition.evidence {
-        evidence.text.clear();
-    }
-    edition
-}
-
 async fn reading(store: &Store, date: Option<&str>, revision: Option<u32>) -> Result<Response> {
     let now = time::now();
     let expected = time::expected(now)?;
@@ -134,7 +127,7 @@ async fn reading(store: &Store, date: Option<&str>, revision: Option<u32>) -> Re
     };
     Response::from_json(
         &json!({"status":status,"expected_date":expected.date,"checked_at":now,
-        "edition":edition.map(public_edition),"run":run}),
+        "edition":edition.as_ref().map(PublicEdition::from),"run":run}),
     )
 }
 
@@ -236,7 +229,7 @@ async fn route(mut request: Request, env: Env) -> Result<Response> {
                     240,
                 )
                 .await?;
-                return Response::from_json(&public_edition(corrected));
+                return Response::from_json(&PublicEdition::from(&corrected));
             }
             (Method::Get, ["api", "admin", "usage"]) => {
                 #[derive(serde::Deserialize, serde::Serialize)]
