@@ -1,0 +1,10 @@
+[workspace]
+members = ["worker"]
+resolver = "2"
+
+[profile.release]
+lto = true
+opt-level = "s"
+codegen-units = 1
+# wasm-bindgen needs the target_features section retained for reference types.
+strip = "debuginfo"

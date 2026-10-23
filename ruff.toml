@@ -1,0 +1,8 @@
+target-version = "py311"
+extend-exclude = [".cache", ".wrangler", "artifacts", "build", "node_modules", "target"]
+
+[lint]
+extend-select = ["I"]
+
+[format]
+quote-style = "single"

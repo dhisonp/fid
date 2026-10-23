@@ -1,0 +1,47 @@
+{
+  "name": "fid",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "dev:web": "vite --config web/vite.config.ts",
+    "dev:verify": "wrangler dev --test-scheduled --var LOCAL_VERIFICATION:true",
+    "build:web": "tsc -p web/tsconfig.json && vite build --config web/vite.config.ts",
+    "build:worker": "cd worker && worker-build --release",
+    "build": "npm run build:web && npm run build:worker",
+    "lint": "npm run lint:web && npm run lint:python && npm run lint:rust",
+    "lint:web": "eslint . --max-warnings=0",
+    "lint:python": "ruff check .",
+    "lint:rust": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "format": "prettier --write . && ruff format . && cargo fmt --all",
+    "format:check": "prettier --check . && ruff format --check . && cargo fmt --all --check",
+    "typecheck": "tsc -p web/tsconfig.json",
+    "check": "npm run format:check && npm run lint && npm run typecheck",
+    "test": "cargo test --workspace && python3 -m unittest discover -s tests -v && node --experimental-strip-types --test tests/api.test.ts",
+    "test:offline": "python3 scripts/check_offline.py",
+    "db:local": "wrangler d1 migrations apply fid --local",
+    "verify:runtime": "wrangler deploy --dry-run --outdir artifacts/worker",
+    "verify:live": "node scripts/live-check.mjs",
+    "audit": "cargo audit && npm audit --omit=dev",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "eslint": "9.39.5",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "14.0.0",
+    "prettier": "3.9.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.67.0",
+    "vite": "8.2.2",
+    "wrangler": "^4.0.0"
+  }
+}

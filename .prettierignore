@@ -1,0 +1,10 @@
+node_modules/
+target/
+build/
+web/dist/
+.cache/
+.wrangler/
+.ruff_cache/
+artifacts/
+package-lock.json
+Cargo.lock

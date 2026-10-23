@@ -1,0 +1,14 @@
+target/
+build/
+node_modules/
+web/dist/
+.wrangler/
+.cache/
+.dev.vars
+.env
+!*.example
+artifacts/
+*.log
+__pycache__/
+.ruff_cache/
+.DS_Store
