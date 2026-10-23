@@ -32,10 +32,23 @@ impl std::error::Error for RuleError {}
 pub fn entry_counts<'a>(
     entries: impl IntoIterator<Item = (&'a str, &'a str)>,
 ) -> Result<(), RuleError> {
-    let mut counts = [0; 7];
+    scoped_entry_counts(entries, false)
+}
+
+pub fn scoped_entry_counts<'a>(
+    entries: impl IntoIterator<Item = (&'a str, &'a str)>,
+    verification: bool,
+) -> Result<(), RuleError> {
+    let categories = if verification {
+        &CATEGORIES[..3]
+    } else {
+        &CATEGORIES[..]
+    };
+    let required = if verification { 3..=3 } else { 4..=7 };
+    let mut counts = vec![0; categories.len()];
     let mut events = HashSet::new();
     for (category, event) in entries {
-        let index = CATEGORIES
+        let index = categories
             .iter()
             .position(|c| *c == category)
             .ok_or_else(|| RuleError::UnknownCategory(category.into()))?;
@@ -44,8 +57,8 @@ pub fn entry_counts<'a>(
         }
         counts[index] += 1;
     }
-    for (category, count) in CATEGORIES.iter().zip(counts) {
-        if !(4..=7).contains(&count) {
+    for (category, count) in categories.iter().zip(counts) {
+        if !required.contains(&count) {
             return Err(RuleError::Count {
                 category: (*category).into(),
                 actual: count,
@@ -117,6 +130,22 @@ mod tests {
         for n in 0..=8 {
             assert_eq!(check(&entries(n)).is_ok(), (4..=7).contains(&n));
         }
+    }
+    #[test]
+    fn verification_requires_three_stories_in_only_the_first_three_categories() {
+        let rows: Vec<_> = entries(3).into_iter().take(9).collect();
+        let check = |rows: &[(String, String)]| {
+            scoped_entry_counts(rows.iter().map(|(a, b)| (a.as_str(), b.as_str())), true)
+        };
+        assert!(check(&rows).is_ok());
+        assert!(check(&rows[..8]).is_err());
+        let mut extra = rows.clone();
+        extra.push(("ai".into(), "extra-event".into()));
+        assert!(matches!(check(&extra), Err(RuleError::UnknownCategory(_))));
+        extra[9] = ("security".into(), "extra-event".into());
+        assert!(matches!(check(&extra), Err(RuleError::Count { .. })));
+        extra[9] = rows[0].clone();
+        assert!(matches!(check(&extra), Err(RuleError::DuplicateEvent(_))));
     }
     #[test]
     fn duplicate_across_columns_rejected() {

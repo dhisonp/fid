@@ -31,7 +31,9 @@ Wrangler builds and serves the Worker and reader; state persists in `.wrangler/`
 
 For real-source verification outside the publication window, restart with `npm run dev:verify`. In another shell, export the same `ADMIN_TOKEN`, then run `npm run verify:live`. Set `FID_ORIGIN` if the Worker uses a different local address.
 
-Verification requires localhost, labels the edition as off-schedule, and writes `artifacts/live-verification.json`. Source or audit failures can prevent publication. A second publication for the same date returns `409`; use a separate local persistence directory to repeat. Keep `LOCAL_VERIFICATION=false` in deployment.
+Verification requires localhost, marks the API edition with `verification: true`, and writes `artifacts/live-verification.json`. Source or audit failures can prevent publication. A second publication for the same date returns `409`; use a separate local persistence directory to repeat. Keep `LOCAL_VERIFICATION=false` in deployment.
+
+Local verification currently requests three stories in each of Security, Industry & Policy, and Development & Infrastructure, using `medium` reasoning. The other four categories have no stories in this edition. Verification collection polls feeds in those three categories and runs only their three supplementary searches. Scheduled publication still requires 4–7 stories in all seven categories with `high` reasoning; evidence validation, factual audit, and source rechecks remain required.
 
 ## Checks
 
