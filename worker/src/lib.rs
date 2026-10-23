@@ -50,7 +50,7 @@ async fn generate(env: &Env, store: &Store) -> Result<()> {
     store
         .start_run(&run, &window.date, window.cutoff, now)
         .await?;
-    let result = deadline(editorial::generate(env, store, &window, &run), 780).await;
+    let result = deadline(editorial::generate(env, store, &window, &run, None), 780).await;
     if let Err(ref failure) = result {
         // Failure reporting is explicit; expiry, rather than fallible cleanup, releases the lease.
         store.fail_run(&run, &failure.to_string()).await?;
@@ -166,6 +166,15 @@ async fn route(mut request: Request, env: Env) -> Result<Response> {
                 if !local || !enabled {
                     return Response::error("Local verification is disabled", 403);
                 }
+                let bytes = request.bytes().await?;
+                if bytes.len() > 500_000 {
+                    return Response::error("Verification draft is too large", 413);
+                }
+                let supplied_draft = if bytes.is_empty() {
+                    None
+                } else {
+                    Some(serde_json::from_slice::<Draft>(&bytes).map_err(error)?)
+                };
                 let now = time::now();
                 let mut window = time::today(now)?;
                 window.previous = now - 86400;
@@ -182,7 +191,11 @@ async fn route(mut request: Request, env: Env) -> Result<Response> {
                 store
                     .start_run(&run, &window.date, window.cutoff, now)
                     .await?;
-                let result = deadline(editorial::generate(&env, &store, &window, &run), 780).await;
+                let result = deadline(
+                    editorial::generate(&env, &store, &window, &run, supplied_draft),
+                    780,
+                )
+                .await;
                 if let Err(ref failure) = result {
                     store.fail_run(&run, &failure.to_string()).await?;
                 }

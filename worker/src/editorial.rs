@@ -302,7 +302,16 @@ async fn recheck(store: &Store, evidence: &[Evidence]) -> Result<()> {
     Ok(())
 }
 
-pub async fn generate(env: &Env, store: &Store, window: &Window, run: &str) -> Result<()> {
+pub async fn generate(
+    env: &Env,
+    store: &Store,
+    window: &Window,
+    run: &str,
+    supplied_draft: Option<Draft>,
+) -> Result<()> {
+    if supplied_draft.is_some() && !window.verification {
+        return Err(error("Supplied drafts require local verification"));
+    }
     let started = time::now();
     rules::generation_window(window.previous, window.cutoff, window.deadline, started)
         .map_err(error)?;
@@ -322,11 +331,21 @@ pub async fn generate(env: &Env, store: &Store, window: &Window, run: &str) -> R
         )));
     }
     let history = store.history().await?;
-    let instruction = contract(window.verification);
-    let draft: Draft = model::generate(
-        env, store, run, "draft", &instruction,
-        &json!({"edition_date":window.date,"window_start":window.previous,"cutoff":window.cutoff,"evidence":model_evidence(&evidence),"previous_events":model_history(&history)?}),
-    ).await?;
+    let draft = match supplied_draft {
+        Some(draft) => {
+            store
+                .artifact(run, "draft", &json!({"supplied_draft":draft}))
+                .await?;
+            draft
+        }
+        None => {
+            let instruction = contract(window.verification);
+            model::generate(
+                env, store, run, "draft", &instruction,
+                &json!({"edition_date":window.date,"window_start":window.previous,"cutoff":window.cutoff,"evidence":model_evidence(&evidence),"previous_events":model_history(&history)?}),
+            ).await?
+        }
+    };
     let validated = validate(draft, &evidence, &history, window)?;
     let used: HashSet<_> = validated
         .stories
