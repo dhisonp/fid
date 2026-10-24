@@ -1,15 +1,40 @@
 # Fid
 
-Daily technical briefing: Rust on Cloudflare Workers, React/TypeScript/Vite reader, D1 publication state, private R2 evidence archives.
+A daily briefing for technology and engineering leads. Fid publishes one feed of nine stories, ranked by relevance, with short summaries and links to originating sources.
 
-Real-source publication, Workers runtime packaging, desktop/mobile browser usability, and deployment remain unverified.
+## Editorial behavior
+
+- At most three stories are AI-specific, including AI-focused tooling, infrastructure, research, policy, and acquisitions.
+- At least three non-AI stories cover developer tooling, infrastructure, substantive engineering articles, or studies combined. Selection favors a mix within that minimum.
+- The remaining slots are flexible. Acquisitions, emerging technologies, licensing, regulation, and platform pricing or subscription changes qualify through concrete industry impact or decision value. Unused AI slots are flexible too.
+- Internal topics support selection and diversity checks. The reader has no category navigation, and reader stories omit internal classifications, claims, scores, and research inspection records.
+
+Every story needs a score of at least 70, fetched originating evidence, and supported claims. Generation produces one draft followed by an independent factual audit; selected sources are rechecked before publication. Research requires full inspectable methods, results, and limitations, rather than an abstract alone. PDF extraction and research artifact execution are unsupported.
+
+Stories retain original publication dates and distinguish new reporting, material updates, carryovers, late discoveries, and older technical work. Insufficient evidence or failed checks withhold the edition; readers keep the previous edition with a delay notice, or see an empty state before the first publication.
+
+## Architecture
+
+The Rust Worker runs on Cloudflare Workers, using D1 for publication state and private R2 storage for archived sources. React, TypeScript, and Vite provide the reader.
+
+| Location                                          | Responsibility                                                                  |
+| ------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `worker/src/lib.rs`, `time.rs`                    | API routes, scheduled jobs, leases, and New York publication windows            |
+| `worker/src/collect.rs`, `sources.rs`, `http.rs`  | Feed/search discovery, bounded source fetching, and evidence extraction         |
+| `worker/src/editorial.rs`, `rules.rs`, `model.rs` | Selection, validation, model requests, factual audit, and source rechecks       |
+| `worker/src/store.rs`, `sql/`, `migrations/`      | Evidence archives, database queries, atomic publication, and retained revisions |
+| `web/src/`                                        | Reader rendering, response validation, and edition permalinks                   |
+
+A quarter-hour cron distributes feed checks across the hour and observes Hacker News. Supplementary searches discover originating documents; search results themselves are not factual evidence. Generation starts at 06:30 `America/New_York` and retries until 07:30, accounting for daylight saving time. Reader traffic never starts collection or generation.
+
+D1 checks generation leases and deadlines against its own clock. Publication commits the edition, revision, history, and evidence references atomically. Corrections retain earlier revisions and preserve event identities. Only evidence referenced by a committed edition is available through the evidence API.
 
 ## Setup
 
-Requires Node 24+, Python 3.11+, current stable Rust, and network access to package registries, source sites, and xAI.
+Requires Node 24+, Python 3.11+, stable Rust, and network access to package registries, originating sources, and xAI.
 
 ```sh
-npm install
+npm ci
 python3 -m pip install -r requirements-dev.txt
 rustup component add rustfmt clippy
 rustup target add wasm32-unknown-unknown
@@ -18,7 +43,7 @@ cargo install cargo-audit --locked
 cp .dev.vars.example .dev.vars
 ```
 
-Set `GROK_API_KEY` and `ADMIN_TOKEN` (at least 24 characters) in `.dev.vars`. Configure the model in `wrangler.toml`; it must support JSON output and Responses API `web_search`. The Grok key serves both generation and search. Blank token prices mean unknown cost; search tool charges are unpriced. Retain both lockfiles.
+Set `GROK_API_KEY` and an `ADMIN_TOKEN` of at least 24 characters in `.dev.vars`. Never commit real secrets. `wrangler.toml` configures the model, endpoint, and optional token prices; the model must support JSON chat responses and Responses API `web_search`. Blank prices mean unknown cost, and search tool charges remain unpriced.
 
 ## Local development
 
@@ -27,38 +52,49 @@ npm run db:local
 npm run dev
 ```
 
-Wrangler builds and serves the Worker and reader; state persists in `.wrangler/`. Optional `npm run dev:web` enables frontend hot reload and proxies `/api` to port 8787.
+Wrangler builds and serves the Worker and reader, with local state in `.wrangler/`. Optional `npm run dev:web` provides frontend hot reload and proxies `/api` to port 8787.
 
-For real-source verification outside the publication window, restart with `npm run dev:verify`. In another shell, export the same `ADMIN_TOKEN`, then run `npm run verify:live`. Set `FID_ORIGIN` if the Worker uses a different local address.
+To verify publication outside the scheduled window, restart with `npm run dev:verify`. Export the same `ADMIN_TOKEN` in another shell, then run:
 
-Verification requires localhost, marks the API edition with `verification: true`, and writes `artifacts/live-verification.json`. Source or audit failures can prevent publication. A second publication for the same date returns `409`; use a separate local persistence directory to repeat. Keep `LOCAL_VERIFICATION=false` in deployment.
+```sh
+npm run verify:live
+```
 
-Local verification currently requests three stories in each of Security, Industry & Policy, and Development & Infrastructure, using `medium` reasoning. The other four categories have no stories in this edition. Verification collection polls feeds in those three categories and runs only their three supplementary searches. Scheduled publication still requires 4–7 stories in all seven categories with `high` reasoning; evidence validation, factual audit, and source rechecks remain required.
+Set `FID_ORIGIN` if the local Worker uses a different address. This command collects real sources, invokes model generation and audit, rechecks evidence, and writes `artifacts/live-verification.json`. Provider and source failures can prevent publication; these requests incur provider usage.
+
+Verification requires localhost, uses the preceding 24 hours, and marks the edition with `verification: true`. It uses the same nine-story rules and full collection scope as scheduled publication, with `medium` rather than `high` reasoning. A second edition for the same date returns `409`. To repeat, use a fresh `--persist-to` directory for both migrations and the dev server.
+
+The local verification endpoint also accepts a JSON draft containing `stories`. Supplied drafts still pass validation, independent audit, source rechecks, and atomic publication against locally archived evidence.
 
 ## Checks
 
 ```sh
-npm run format          # apply formatting
-npm run check           # formatting, lint, types; required before committing
-npm test                # Rust, SQLite, frontend parser
-npm run build           # frontend and Wasm Worker
-npm run verify:runtime  # Wrangler deployment dry run
-npm run audit           # Cargo and production npm dependencies
+npm run check           # formatting, lint, and TypeScript
+npm test                # Rust rules/editorial logic, production SQL, and API parsing
+npm run build           # reader and release Wasm Worker
+npm run verify:runtime  # deployment packaging dry run; does not deploy
+npm run audit           # Rust and production npm dependency advisories
 ```
 
-Without downloaded dependencies, `npm run test:offline` checks standalone Rust rules, SQL against SQLite, the frontend parser, and rustfmt. Host tests and builds do not verify Workers bindings, live editorial quality, or browser usability.
+`npm run format` applies formatting. `npm run test:offline` checks standalone Rust rules, storage SQL, API parsing, and rustfmt without downloading dependencies. CI runs the full checks, builds, packaging dry run, and dependency audits.
 
-## Runtime
+For runtime verification, exercise the built Worker with local D1/R2 state and check the reader at mobile and desktop widths. Builds, stored-edition reads, and browser checks do not establish fresh model output quality or successful deployed scheduled execution.
 
-- A quarter-hour cron polls sources hourly and observes HN. Generation starts at 06:30 `America/New_York`, retries until 07:30, and accounts for DST. Reader requests never trigger generation.
-- Publication requires 4–7 supported entries in each of seven categories. Insufficient evidence leaves the previous edition available with stale status; before the first publication, the reader shows no edition.
-- D1 atomically commits publication; retries cannot overwrite an edition. Corrections create retained revisions. R2 stays private; only evidence referenced by committed editions is publicly exposed. Research requires inspectable full HTML; PDF extraction and artifact execution are unsupported.
-- Public API: `/api/latest`, `/api/editions`, `/api/editions/YYYY-MM-DD[/revisions/N]`, `/api/evidence/ID`, `/api/sources`. Reader permalinks: `/editions/YYYY-MM-DD[/revisions/N]`.
-- `/api/admin/*` requires `Authorization: Bearer <ADMIN_TOKEN>`. Collect, generate, verify, usage, and correction handlers are in [worker/src/lib.rs](worker/src/lib.rs).
+## API
+
+| Public route                             | Response                                                                 |
+| ---------------------------------------- | ------------------------------------------------------------------------ |
+| `/api/latest`                            | Latest edition, availability/stale status, and expected publication date |
+| `/api/editions`                          | Recent edition dates and revision metadata                               |
+| `/api/editions/YYYY-MM-DD[/revisions/N]` | Edition or retained revision                                             |
+| `/api/evidence/ID`                       | Archived source referenced by a published edition                        |
+| `/api/sources`                           | Configured source list                                                   |
+
+Reader permalinks use `/editions/YYYY-MM-DD[/revisions/N]`. Operator routes under `/api/admin/` require `Authorization: Bearer <ADMIN_TOKEN>` and provide collection, scheduled generation, local verification, usage, and corrections; their request contracts are in `worker/src/lib.rs`.
 
 ## Deployment
 
-Complete local runtime, real-source, and desktop/mobile verification first. A Workers paid plan is required for the configured CPU and subrequest budgets.
+Configure a Cloudflare Workers paid plan for the CPU budget in `wrangler.toml`, then create the storage resources:
 
 ```sh
 npx wrangler login
@@ -66,7 +102,7 @@ npx wrangler d1 create fid
 npx wrangler r2 bucket create fid-evidence
 ```
 
-Replace the placeholder D1 database ID in `wrangler.toml`, configure the model/prices, and leave local verification disabled.
+Replace the placeholder D1 database ID, configure the model and token prices, and keep `LOCAL_VERIFICATION=false` in deployment. After local runtime and real-source verification:
 
 ```sh
 npx wrangler secret put GROK_API_KEY
@@ -75,4 +111,4 @@ npx wrangler d1 migrations apply fid --remote
 npm run deploy
 ```
 
-Deployment includes assets, Worker, bindings, and cron. Verify the public URL, scheduled execution, first published edition, coverage, and usage. CI checks without deploying.
+Deployment publishes assets, Worker code, bindings, and cron configuration. Check the public reader, scheduled execution, first complete edition, coverage, and usage after deploying.
