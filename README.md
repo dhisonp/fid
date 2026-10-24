@@ -4,25 +4,15 @@ A daily briefing for technology and engineering leads. Fid publishes one feed of
 
 ## Run locally
 
-After completing the first-time setup below, run these commands from the repository root:
+From the repository root:
 
 ```sh
-npm run db:local
-npm run dev:verify
+npm run dev
 ```
 
-Keep that terminal running and open **http://localhost:8787**. Wrangler builds and serves both the reader and backend; no separate build or frontend server is needed.
+Open **http://localhost:8787**. This command applies local database migrations, builds the app, and serves the news feed. Your saved edition persists between restarts in `.wrangler/state`. Stop with **Ctrl+C**.
 
-A fresh database shows **“No edition is available yet.”** Starting the server does not generate stories, and local cron jobs do not run automatically. To collect sources and generate your first edition, open a second terminal in the repository and run:
-
-```sh
-export ADMIN_TOKEN='the same ADMIN_TOKEN you set in .dev.vars'
-npm run verify:live
-```
-
-Generation takes several minutes and makes paid xAI requests. The page refreshes its data automatically every five minutes; reload to see the result immediately. Failed source or audit checks leave the edition unpublished; details appear in the command output.
-
-Local state persists in `.wrangler/`. If an existing edition is stored in another directory, start the server with `npm run dev -- --persist-to <state-directory>` to read it. Use the same persistence directory for migrations, collection, and reading. Stop the server with **Ctrl+C**.
+For a new checkout, complete the first-time setup below. If there is no saved edition, generate one using the local publication commands below.
 
 For frontend hot reload, keep the Worker running and run `npm run dev:web` in another terminal; open the Vite URL it prints.
 
@@ -70,6 +60,21 @@ A quarter-hour cron distributes feed checks across the hour and observes Hacker 
 D1 checks generation leases and deadlines against its own clock. Publication commits the edition, revision, history, and evidence references atomically. Corrections retain earlier revisions and preserve event identities. Only evidence referenced by a committed edition is available through the evidence API.
 
 ## Local publication details
+
+To collect sources and publish a fresh local edition, start the server with:
+
+```sh
+npm run dev:verify
+```
+
+In another terminal in the repository:
+
+```sh
+export ADMIN_TOKEN='the same ADMIN_TOKEN you set in .dev.vars'
+npm run verify:live
+```
+
+Generation takes several minutes and makes paid xAI requests. The reader refreshes every five minutes; reload to see the result immediately. Source or audit failures leave the previous edition available. Local cron jobs do not run automatically.
 
 `npm run dev:verify` enables publication outside the scheduled window. Verification requires localhost, uses the preceding 24 hours, and marks the edition with `verification: true`. It uses the same nine-story rules and full collection scope as scheduled publication, with `medium` rather than `high` reasoning.
 
