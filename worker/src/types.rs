@@ -13,7 +13,7 @@ text_enum!(Category {
     Security => "security", IndustryPolicy => "industry-policy",
     DevelopmentInfrastructure => "development-infrastructure", Ai => "ai",
     EngineeringPractice => "engineering-practice", ResearchLectures => "research-lectures",
-    SoftwareProducts => "software-products",
+    DeveloperTools => "developer-tools", SoftwareProducts => "software-products",
 });
 text_enum!(Label { New => "new", Update => "update", Carryover => "carryover", LateDiscovery => "late-discovery", OlderWork => "older-work" });
 text_enum!(ClaimKind { Confirmed => "confirmed", Attributed => "attributed", Inference => "inference", Uncertain => "uncertain" });
@@ -144,7 +144,6 @@ pub struct PublicEdition<'a> {
 #[derive(Serialize)]
 pub struct PublicStory<'a> {
     pub event_id: &'a str,
-    pub category: Category,
     pub headline: &'a str,
     pub paragraphs: &'a [String],
     pub evidence_ids: &'a [String],
@@ -174,7 +173,6 @@ impl<'a> From<&'a Edition> for PublicEdition<'a> {
                 .iter()
                 .map(|story| PublicStory {
                     event_id: &story.event_id,
-                    category: story.category,
                     headline: &story.headline,
                     paragraphs: &story.paragraphs,
                     evidence_ids: &story.evidence_ids,
@@ -261,12 +259,11 @@ mod tests {
         let edition: Edition = serde_json::from_value(stored.clone()).unwrap();
         let public = serde_json::to_value(PublicEdition::from(&edition)).unwrap();
         let story = &public["stories"][0];
-        for field in ["claims", "paper", "score", "rationale"] {
+        for field in ["category", "claims", "paper", "score", "rationale"] {
             assert!(story.get(field).is_none());
         }
         for field in [
             "event_id",
-            "category",
             "headline",
             "paragraphs",
             "evidence_ids",

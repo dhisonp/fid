@@ -1,18 +1,10 @@
 use std::collections::HashSet;
 
-pub const CATEGORIES: [&str; 7] = [
-    "security",
-    "industry-policy",
-    "development-infrastructure",
-    "ai",
-    "engineering-practice",
-    "research-lectures",
-    "software-products",
-];
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum RuleError {
-    Count { category: String, actual: usize },
+    Count { actual: usize },
+    TooMuchAi { actual: usize },
+    TooLittleTechnicalWork { actual: usize },
     DuplicateEvent(String),
     UnknownCategory(String),
     InvalidWindow,
@@ -32,38 +24,35 @@ impl std::error::Error for RuleError {}
 pub fn entry_counts<'a>(
     entries: impl IntoIterator<Item = (&'a str, &'a str)>,
 ) -> Result<(), RuleError> {
-    scoped_entry_counts(entries, false)
-}
-
-pub fn scoped_entry_counts<'a>(
-    entries: impl IntoIterator<Item = (&'a str, &'a str)>,
-    verification: bool,
-) -> Result<(), RuleError> {
-    let categories = if verification {
-        &CATEGORIES[..3]
-    } else {
-        &CATEGORIES[..]
-    };
-    let required = if verification { 3..=3 } else { 4..=7 };
-    let mut counts = vec![0; categories.len()];
+    let mut count = 0;
+    let mut ai = 0;
+    let mut technical_work = 0;
     let mut events = HashSet::new();
     for (category, event) in entries {
-        let index = categories
-            .iter()
-            .position(|c| *c == category)
-            .ok_or_else(|| RuleError::UnknownCategory(category.into()))?;
+        match category {
+            "ai" => ai += 1,
+            "development-infrastructure"
+            | "engineering-practice"
+            | "research-lectures"
+            | "developer-tools" => technical_work += 1,
+            "security" | "industry-policy" | "software-products" => (),
+            _ => return Err(RuleError::UnknownCategory(category.into())),
+        }
         if !events.insert(event) {
             return Err(RuleError::DuplicateEvent(event.into()));
         }
-        counts[index] += 1;
+        count += 1;
     }
-    for (category, count) in categories.iter().zip(counts) {
-        if !required.contains(&count) {
-            return Err(RuleError::Count {
-                category: (*category).into(),
-                actual: count,
-            });
-        }
+    if count != 9 {
+        return Err(RuleError::Count { actual: count });
+    }
+    if ai > 3 {
+        return Err(RuleError::TooMuchAi { actual: ai });
+    }
+    if technical_work < 3 {
+        return Err(RuleError::TooLittleTechnicalWork {
+            actual: technical_work,
+        });
     }
     Ok(())
 }
@@ -116,40 +105,59 @@ pub fn quote_supported(document: &str, quote: &str) -> Result<(), RuleError> {
 mod tests {
     use super::*;
 
-    fn entries(n: usize) -> Vec<(String, String)> {
-        CATEGORIES
-            .iter()
-            .flat_map(|c| (0..n).map(move |i| (c.to_string(), format!("{c}-{i}"))))
+    fn entries(ai: usize, technical: usize, flex: usize) -> Vec<(String, String)> {
+        std::iter::repeat_n("ai", ai)
+            .chain(std::iter::repeat_n("development-infrastructure", technical))
+            .chain(std::iter::repeat_n("security", flex))
+            .enumerate()
+            .map(|(i, c)| (c.into(), format!("event-{i}")))
             .collect()
     }
     fn check(rows: &[(String, String)]) -> Result<(), RuleError> {
         entry_counts(rows.iter().map(|(a, b)| (a.as_str(), b.as_str())))
     }
     #[test]
-    fn all_seven_categories_require_four_to_seven() {
-        for n in 0..=8 {
-            assert_eq!(check(&entries(n)).is_ok(), (4..=7).contains(&n));
+    fn nine_stories_with_at_most_three_ai_and_at_least_three_technical() {
+        for ai in 0..=10 {
+            for technical in 0..=10 {
+                for flex in 0..=10 {
+                    assert_eq!(
+                        check(&entries(ai, technical, flex)).is_ok(),
+                        ai + technical + flex == 9 && ai <= 3 && technical >= 3,
+                        "ai={ai}, technical={technical}, flex={flex}"
+                    );
+                }
+            }
         }
     }
     #[test]
-    fn verification_requires_three_stories_in_only_the_first_three_categories() {
-        let rows: Vec<_> = entries(3).into_iter().take(9).collect();
-        let check = |rows: &[(String, String)]| {
-            scoped_entry_counts(rows.iter().map(|(a, b)| (a.as_str(), b.as_str())), true)
-        };
+    fn tooling_and_articles_share_one_minimum_and_flex_is_unrestricted() {
+        let mut rows = entries(3, 3, 3);
+        for category in [
+            "development-infrastructure",
+            "engineering-practice",
+            "research-lectures",
+            "developer-tools",
+        ] {
+            for row in &mut rows[3..6] {
+                row.0 = category.into();
+            }
+            assert!(check(&rows).is_ok());
+        }
+        rows[3].0 = "engineering-practice".into();
+        rows[4].0 = "research-lectures".into();
+        rows[6].0 = "industry-policy".into();
+        rows[7].0 = "software-products".into();
         assert!(check(&rows).is_ok());
-        assert!(check(&rows[..8]).is_err());
-        let mut extra = rows.clone();
-        extra.push(("ai".into(), "extra-event".into()));
-        assert!(matches!(check(&extra), Err(RuleError::UnknownCategory(_))));
-        extra[9] = ("security".into(), "extra-event".into());
-        assert!(matches!(check(&extra), Err(RuleError::Count { .. })));
-        extra[9] = rows[0].clone();
-        assert!(matches!(check(&extra), Err(RuleError::DuplicateEvent(_))));
+        rows[5].0 = "security".into();
+        assert_eq!(
+            check(&rows),
+            Err(RuleError::TooLittleTechnicalWork { actual: 2 })
+        );
     }
     #[test]
-    fn duplicate_across_columns_rejected() {
-        let mut rows = entries(4);
+    fn duplicate_events_across_topics_rejected() {
+        let mut rows = entries(3, 3, 3);
         rows[5].1 = rows[0].1.clone();
         assert!(matches!(check(&rows), Err(RuleError::DuplicateEvent(_))));
     }

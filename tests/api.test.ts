@@ -36,7 +36,7 @@ test('a stale response retains the previous edition and failure details', () => 
     edition: edition(),
     run: {
       status: 'incomplete',
-      detail: 'Insufficient qualifying security entries',
+      detail: 'Insufficient qualifying stories',
       started_at: 1792751500,
     },
   });
@@ -93,7 +93,6 @@ test('source dates retain precision; executable source URLs are rejected', () =>
 test('reader feeds need only source links and dates, without verification fields', () => {
   const story = {
     event_id: 'event',
-    category: 'security',
     headline: 'A material change',
     paragraphs: ['Affected scope and mitigation.'],
     evidence_ids: ['source'],
@@ -114,6 +113,14 @@ test('reader feeds need only source links and dates, without verification fields
   const parsed = parseFeed(response);
   assert.deepEqual(parsed.edition?.stories, [story]);
   assert.deepEqual(parsed.edition?.evidence, [source]);
+  const legacy = parseFeed({
+    ...response,
+    edition: {
+      ...response.edition,
+      stories: [{ ...story, category: 'security' }],
+    },
+  });
+  assert.deepEqual(legacy.edition?.stories, [story]);
   assert.throws(
     () =>
       parseFeed({
@@ -122,4 +129,26 @@ test('reader feeds need only source links and dates, without verification fields
       }),
     /missing evidence/,
   );
+});
+
+test('the unified feed preserves the relevance order across all nine stories', () => {
+  const stories = Array.from({ length: 9 }, (_, i) => ({
+    event_id: `event-${i}`,
+    headline: `Relevant story ${i}`,
+    paragraphs: ['A consequential development for engineering leads.'],
+    evidence_ids: ['source'],
+    label: 'new',
+    delta: '',
+    uncertainty: '',
+  }));
+  const parsed = parseFeed({
+    ...feed(),
+    status: 'available',
+    edition: {
+      ...edition(),
+      stories,
+      evidence: [{ id: 'source', url: 'https://example.com', published: null }],
+    },
+  });
+  assert.deepEqual(parsed.edition?.stories, stories);
 });

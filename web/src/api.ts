@@ -1,13 +1,3 @@
-export const categories = [
-  ['security', 'Security'],
-  ['industry-policy', 'Industry & Policy'],
-  ['development-infrastructure', 'Development & Infrastructure'],
-  ['ai', 'AI'],
-  ['engineering-practice', 'Engineering Practice'],
-  ['research-lectures', 'Research & Lectures'],
-  ['software-products', 'Software & Products'],
-] as const;
-export type Category = (typeof categories)[number][0];
 export type SourceDate = { value: string; precision: 'day' | 'second' };
 export type Evidence = {
   id: string;
@@ -16,7 +6,6 @@ export type Evidence = {
 };
 export type Story = {
   event_id: string;
-  category: Category;
   headline: string;
   paragraphs: string[];
   label: 'new' | 'update' | 'carryover' | 'late-discovery' | 'older-work';
@@ -120,10 +109,6 @@ function parseStory(raw: unknown): Story {
   const s = object(raw);
   return {
     event_id: string(s.event_id),
-    category: choice(
-      s.category,
-      categories.map((c) => c[0]),
-    ),
     headline: string(s.headline),
     paragraphs: array(s.paragraphs, string),
     label: choice(s.label, [

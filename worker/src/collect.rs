@@ -177,16 +177,10 @@ pub async fn all(env: &Env, store: &Store) -> Result<()> {
 
 async fn run(env: &Env, store: &Store, timestamp: i64, all_sources: bool) -> Result<()> {
     use futures_util::{stream, StreamExt};
-    let verification = env
-        .var("LOCAL_VERIFICATION")
-        .is_ok_and(|v| v.to_string() == "true");
     let slot = (timestamp / 900).rem_euclid(4) as usize;
     let results = stream::iter(
         crate::sources::SOURCES
             .iter()
-            .filter(|source| {
-                !verification || crate::rules::CATEGORIES[..3].contains(&source.category)
-            })
             .enumerate()
             .filter(|(index, _)| all_sources || index % 4 == slot)
             .map(|(_, source)| poll_feed(store, source, timestamp)),
@@ -499,15 +493,14 @@ async fn targeted_search(env: &Env, store: &Store) -> Result<()> {
         .is_ok_and(|v| v.to_string() == "true");
     for query in [
         "security advisory vulnerability mitigation",
-        "software licensing regulation engineering",
+        "technology acquisitions consolidation software licensing regulation engineering leadership",
         "database runtime release outage postmortem",
         "AI model evaluation inference research",
         "engineering performance debugging architecture",
         "systems research paper methods results",
-        "developer tools API deprecation release",
+        "emerging technology developer tools platform subscription pricing API deprecation release",
     ]
     .into_iter()
-    .take(if verification { 3 } else { 7 })
     {
         let result: Result<()> = async {
             let body = serde_json::json!({

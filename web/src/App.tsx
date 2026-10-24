@@ -1,7 +1,6 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
-import type { KeyboardEvent } from 'react';
-import { categories, loadFeed } from './api';
-import type { Category, Edition, Feed, SourceDate, Story } from './api';
+import { Fragment, useEffect, useState } from 'react';
+import { loadFeed } from './api';
+import type { Edition, Feed, SourceDate, Story } from './api';
 
 const timestamp = (value: number) =>
   new Intl.DateTimeFormat('en-US', {
@@ -108,9 +107,6 @@ export default function App() {
   const [feed, setFeed] = useState<Feed | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [active, setActive] = useState<Category>('security');
-  const [categoriesExpanded, setCategoriesExpanded] = useState(false);
-  const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   useEffect(() => {
     const controller = new AbortController();
     loadFeed(feedPath(), controller.signal)
@@ -133,23 +129,6 @@ export default function App() {
     }, 5 * 60_000);
     return () => window.clearInterval(timer);
   }, []);
-  function tabKey(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    const next =
-      event.key === 'ArrowDown'
-        ? (index + 1) % categories.length
-        : event.key === 'ArrowUp'
-          ? (index - 1 + categories.length) % categories.length
-          : event.key === 'Home'
-            ? 0
-            : event.key === 'End'
-              ? categories.length - 1
-              : null;
-    if (next !== null) {
-      event.preventDefault();
-      setActive(categories[next][0]);
-      tabs.current[next]?.focus();
-    }
-  }
   const edition = feed?.edition ?? null;
   return (
     <div className="page">
@@ -208,9 +187,9 @@ export default function App() {
         <main id="reading" className="empty">
           <h2>No edition is available yet.</h2>
           <p>
-            Fid publishes only when every category has enough substantive,
-            supported reporting. Collection and publication run independently of
-            your visit.
+            Fid publishes nine relevant stories backed by substantive, supported
+            reporting. Collection and publication run independently of your
+            visit.
           </p>
           <p>The next complete edition will appear here automatically.</p>
         </main>
@@ -232,72 +211,11 @@ export default function App() {
               ))}
             </aside>
           )}
-          <div className="reading-layout">
-            <aside
-              className="category-selector"
-              data-expanded={categoriesExpanded}
-            >
-              <button
-                className="category-toggle"
-                aria-expanded={categoriesExpanded}
-                aria-controls="category-tabs"
-                onClick={() => setCategoriesExpanded((expanded) => !expanded)}
-              >
-                Categories · {categories.find(([id]) => id === active)?.[1]}
-                <span aria-hidden="true">{categoriesExpanded ? '−' : '+'}</span>
-              </button>
-              <nav
-                className="tabs"
-                id="category-tabs"
-                role="tablist"
-                aria-label="News categories"
-                aria-orientation="vertical"
-              >
-                {categories.map(([id, name], i) => (
-                  <button
-                    key={id}
-                    ref={(el) => {
-                      tabs.current[i] = el;
-                    }}
-                    role="tab"
-                    id={`tab-${id}`}
-                    aria-controls={`panel-${id}`}
-                    aria-selected={active === id}
-                    tabIndex={active === id ? 0 : -1}
-                    onClick={() => setActive(id)}
-                    onKeyDown={(event) => tabKey(event, i)}
-                  >
-                    {name}
-                  </button>
-                ))}
-              </nav>
-            </aside>
-            <main className="reading" id="reading" tabIndex={-1}>
-              {categories.map(([id]) => (
-                <section
-                  key={id}
-                  role="tabpanel"
-                  id={`panel-${id}`}
-                  aria-labelledby={`tab-${id}`}
-                  hidden={active !== id}
-                  tabIndex={0}
-                >
-                  {!edition.stories.some((story) => story.category === id) && (
-                    <p className="empty">No stories in this category.</p>
-                  )}
-                  {edition.stories
-                    .filter((s) => s.category === id)
-                    .map((story) => (
-                      <StoryCard
-                        key={story.event_id}
-                        story={story}
-                        edition={edition}
-                      />
-                    ))}
-                </section>
-              ))}
-            </main>
-          </div>
+          <main className="reading" id="reading" tabIndex={-1}>
+            {edition.stories.map((story) => (
+              <StoryCard key={story.event_id} story={story} edition={edition} />
+            ))}
+          </main>
         </>
       )}
     </div>

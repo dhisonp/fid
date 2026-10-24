@@ -31,11 +31,6 @@ assert(
   new Set(edition.stories.map((s) => s.event_id)).size ===
     edition.stories.length,
 );
-const ids = ['security', 'industry-policy', 'development-infrastructure'];
-for (const id of ids) {
-  const count = edition.stories.filter((s) => s.category === id).length;
-  assert.equal(count, 3, `${id}: ${count}`);
-}
 assert.equal(edition.stories.length, 9);
 const evidenceIds = new Set(edition.evidence.map((source) => source.id));
 for (const story of edition.stories) {
@@ -43,6 +38,7 @@ for (const story of edition.stories) {
   assert(story.evidence_ids.every((id) => evidenceIds.has(id)));
   assert(!('claims' in story));
   assert(!('paper' in story));
+  assert(!('category' in story));
 }
 for (const evidence of edition.evidence) {
   assert.equal(new URL(evidence.url).protocol, 'https:');
