@@ -2,6 +2,46 @@
 
 A daily briefing for technology and engineering leads. Fid publishes one feed of nine stories, ranked by relevance, with short summaries and links to originating sources.
 
+## Run locally
+
+After completing the first-time setup below, run these commands from the repository root:
+
+```sh
+npm run db:local
+npm run dev:verify
+```
+
+Keep that terminal running and open **http://localhost:8787**. Wrangler builds and serves both the reader and backend; no separate build or frontend server is needed.
+
+A fresh database shows **“No edition is available yet.”** Starting the server does not generate stories, and local cron jobs do not run automatically. To collect sources and generate your first edition, open a second terminal in the repository and run:
+
+```sh
+export ADMIN_TOKEN='the same ADMIN_TOKEN you set in .dev.vars'
+npm run verify:live
+```
+
+Generation takes several minutes and makes paid xAI requests. The page refreshes its data automatically every five minutes; reload to see the result immediately. Failed source or audit checks leave the edition unpublished; details appear in the command output.
+
+Local state persists in `.wrangler/`. If an existing edition is stored in another directory, start the server with `npm run dev -- --persist-to <state-directory>` to read it. Use the same persistence directory for migrations, collection, and reading. Stop the server with **Ctrl+C**.
+
+For frontend hot reload, keep the Worker running and run `npm run dev:web` in another terminal; open the Vite URL it prints.
+
+## First-time setup
+
+Requires Node 24+, Python 3.11+, stable Rust, and network access to package registries, originating sources, and xAI.
+
+```sh
+npm ci
+python3 -m pip install -r requirements-dev.txt
+rustup component add rustfmt clippy
+rustup target add wasm32-unknown-unknown
+cargo install worker-build --locked
+cargo install cargo-audit --locked
+cp .dev.vars.example .dev.vars
+```
+
+Set `GROK_API_KEY` and an `ADMIN_TOKEN` of at least 24 characters in `.dev.vars`. Never commit real secrets. `wrangler.toml` configures the model, endpoint, and optional token prices; the model must support JSON chat responses and Responses API `web_search`. Blank prices mean unknown cost, and search tool charges remain unpriced.
+
 ## Editorial behavior
 
 - At most three stories are AI-specific, including AI-focused tooling, infrastructure, research, policy, and acquisitions.
@@ -29,40 +69,11 @@ A quarter-hour cron distributes feed checks across the hour and observes Hacker 
 
 D1 checks generation leases and deadlines against its own clock. Publication commits the edition, revision, history, and evidence references atomically. Corrections retain earlier revisions and preserve event identities. Only evidence referenced by a committed edition is available through the evidence API.
 
-## Setup
+## Local publication details
 
-Requires Node 24+, Python 3.11+, stable Rust, and network access to package registries, originating sources, and xAI.
+`npm run dev:verify` enables publication outside the scheduled window. Verification requires localhost, uses the preceding 24 hours, and marks the edition with `verification: true`. It uses the same nine-story rules and full collection scope as scheduled publication, with `medium` rather than `high` reasoning.
 
-```sh
-npm ci
-python3 -m pip install -r requirements-dev.txt
-rustup component add rustfmt clippy
-rustup target add wasm32-unknown-unknown
-cargo install worker-build --locked
-cargo install cargo-audit --locked
-cp .dev.vars.example .dev.vars
-```
-
-Set `GROK_API_KEY` and an `ADMIN_TOKEN` of at least 24 characters in `.dev.vars`. Never commit real secrets. `wrangler.toml` configures the model, endpoint, and optional token prices; the model must support JSON chat responses and Responses API `web_search`. Blank prices mean unknown cost, and search tool charges remain unpriced.
-
-## Local development
-
-```sh
-npm run db:local
-npm run dev
-```
-
-Wrangler builds and serves the Worker and reader, with local state in `.wrangler/`. Optional `npm run dev:web` provides frontend hot reload and proxies `/api` to port 8787.
-
-To verify publication outside the scheduled window, restart with `npm run dev:verify`. Export the same `ADMIN_TOKEN` in another shell, then run:
-
-```sh
-npm run verify:live
-```
-
-Set `FID_ORIGIN` if the local Worker uses a different address. This command collects real sources, invokes model generation and audit, rechecks evidence, and writes `artifacts/live-verification.json`. Provider and source failures can prevent publication; these requests incur provider usage.
-
-Verification requires localhost, uses the preceding 24 hours, and marks the edition with `verification: true`. It uses the same nine-story rules and full collection scope as scheduled publication, with `medium` rather than `high` reasoning. A second edition for the same date returns `409`. To repeat, use a fresh `--persist-to` directory for both migrations and the dev server.
+`npm run verify:live` collects originating sources, generates and audits a draft, rechecks evidence, and writes `artifacts/live-verification.json`. Set `FID_ORIGIN` if the Worker uses a different address. A second edition for the same date returns `409`; use a fresh `--persist-to` directory for both migrations and the dev server to repeat.
 
 The local verification endpoint also accepts a JSON draft containing `stories`. Supplied drafts still pass validation, independent audit, source rechecks, and atomic publication against locally archived evidence.
 
