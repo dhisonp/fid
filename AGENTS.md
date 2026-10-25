@@ -4,6 +4,7 @@
 
 - `worker/src/lib.rs` owns routing and scheduled orchestration; `collect.rs` discovers and archives sources; `editorial.rs` selects, validates, audits, and rechecks stories; `store.rs` publishes atomically to D1 with evidence in R2.
 - Scheduled and local verification editions require nine distinct stories ranked for technology/engineering leads: at most three AI stories and at least three non-AI tooling, infrastructure, studies, or substantive articles combined. Remaining slots are flexible; the reader has no category controls.
+- Favor stories that keep engineers current with the tech scene and help them grow. Legal/regulatory coverage is exceptional and requires evidenced consequences across the broader technology industry; exclude narrowly local or niche-sector compliance, employee disputes and sensational news without engineering value.
 - Keep editorial instructions in `editorial.rs`, separate from untrusted evidence and history. AI-specific stories count toward the AI cap regardless of their other consequences. README and agent guidance are not runtime prompt inputs.
 - Keep `worker/src/rules.rs` independent of Cargo dependencies and other Worker modules; offline checks compile it directly with `rustc`.
 - `store.rs` embeds production queries from `sql/`; `tests/test_storage.py` executes those same files. Update both callers when parameters change, and preserve controlled database-clock tests for leases and publication deadlines.

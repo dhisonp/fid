@@ -1,6 +1,6 @@
 # Fid
 
-A daily briefing for technology and engineering leads. Fid publishes one feed of nine stories, ranked by relevance, with short summaries and links to originating sources.
+A daily briefing for engineers and technology leads to stay current with the tech scene and grow as engineers. Fid publishes one feed of nine stories, ranked by relevance, with short summaries and links to originating sources.
 
 ## Run locally
 
@@ -36,7 +36,9 @@ Set `GROK_API_KEY` and an `ADMIN_TOKEN` of at least 24 characters in `.dev.vars`
 
 - At most three stories are AI-specific, including AI-focused tooling, infrastructure, research, policy, and acquisitions.
 - At least three non-AI stories cover developer tooling, infrastructure, substantive engineering articles, or studies combined. Selection favors a mix within that minimum.
-- The remaining slots are flexible. Acquisitions, emerging technologies, licensing, regulation, and platform pricing or subscription changes qualify through concrete industry impact or decision value. Unused AI slots are flexible too.
+- The remaining slots are flexible, favoring engineering usefulness, technical depth and lasting significance. Acquisitions, emerging technologies, licensing, and platform pricing or subscription changes qualify through concrete effects on the technology ecosystem. Unused AI slots are flexible too.
+- Legal and regulatory stories are exceptional and require evidenced consequences across the broader technology industry. Local or niche-sector compliance, employee disputes, gossip and sensational breaking news do not qualify merely through a connection to technology, privacy or security.
+- Hacker News and X discovery receive a modest preference when engineering value and evidence quality are comparable; popularity never substitutes for relevance or factual support.
 - Internal topics support selection and diversity checks. The reader has no category navigation, and reader stories omit internal classifications, claims, scores, and research inspection records.
 
 Every story needs a score of at least 70, fetched originating evidence, and supported claims. Generation produces one draft followed by an independent factual audit; selected sources are rechecked before publication. Research requires full inspectable methods, results, and limitations, rather than an abstract alone. PDF extraction and research artifact execution are unsupported.
