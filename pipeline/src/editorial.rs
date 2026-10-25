@@ -4,10 +4,10 @@ use crate::{
     time::{self, Window},
     types::{Audit, Correction, Draft, Edition, Evidence, History, Story},
 };
-use chrono::NaiveDate;
+
+use crate::{config::Config, Result};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
-use worker::{Env, Result};
 
 const CATEGORIES: &str = r#"Assign one internal category for diversity checks, never for reader grouping. AI-specific stories MUST use ai, including AI tools, AI infrastructure/research, and AI-focused acquisitions, policy, pricing or security; do not evade the AI cap through another category. Otherwise choose by dominant consequence:
 security: vulnerabilities, exploitation, breaches, supply-chain compromise, consequential defenses; no speculative threats or security marketing.
@@ -89,7 +89,7 @@ pub struct ValidatedDraft {
     pub fingerprints: Vec<(String, String)>,
 }
 
-pub fn fingerprint(story: &Story, evidence: &[Evidence]) -> Result<String> {
+pub(crate) fn fingerprint(story: &Story, evidence: &[Evidence]) -> Result<String> {
     let mut hashes = story
         .evidence_ids
         .iter()
@@ -234,7 +234,7 @@ pub fn validate(
 }
 
 async fn audit(
-    env: &Env,
+    config: &Config,
     store: &Store,
     run: &str,
     draft: &ValidatedDraft,
@@ -249,7 +249,7 @@ async fn audit(
             .replace("__SELECTION__", SELECTION)
     );
     let audit: Audit = model::generate(
-        env,
+        config,
         store,
         run,
         "audit",
@@ -284,7 +284,7 @@ async fn recheck(store: &Store, evidence: &[Evidence]) -> Result<()> {
             || current.published != source.published
             || current.updated != source.updated
         {
-            store.evidence(current, raw).await?;
+            store.evidence(current, raw)?;
             return Err(error(format!(
                 "Staged source changed after cutoff; withheld for reassessment: {}",
                 source.url
@@ -295,7 +295,7 @@ async fn recheck(store: &Store, evidence: &[Evidence]) -> Result<()> {
 }
 
 pub async fn generate(
-    env: &Env,
+    config: &Config,
     store: &Store,
     window: &Window,
     run: &str,
@@ -307,25 +307,23 @@ pub async fn generate(
     let started = time::now();
     rules::generation_window(window.previous, window.cutoff, window.deadline, started)
         .map_err(error)?;
-    let evidence = store.candidates(window.previous, window.cutoff).await?;
+    let evidence = store.candidates(window.previous, window.cutoff)?;
     if evidence.is_empty() {
         return Err(error(format!(
             "Only {} fetched evidence documents available; no filler will be generated",
             evidence.len()
         )));
     }
-    let history = store.history().await?;
+    let history = store.history()?;
     let draft = match supplied_draft {
         Some(draft) => {
-            store
-                .artifact(run, "draft", &json!({"supplied_draft":draft}))
-                .await?;
+            store.artifact(run, "draft", &json!({"supplied_draft":draft}))?;
             draft
         }
         None => {
             let instruction = contract();
             model::generate(
-                env, store, run, "draft", &instruction,
+                config, store, run, "draft", &instruction,
                 &json!({"edition_date":window.date,"window_start":window.previous,"cutoff":window.cutoff,"evidence":model_evidence(&evidence),"previous_events":model_history(&history)?}),
             ).await?
         }
@@ -341,7 +339,7 @@ pub async fn generate(
         .filter(|e| used.contains(&e.id))
         .cloned()
         .collect();
-    audit(env, store, run, &validated, &selected, &history, window).await?;
+    audit(config, store, run, &validated, &selected, &history, window).await?;
     recheck(store, &selected).await?;
     let published = time::now();
     rules::generation_window(window.previous, window.cutoff, window.deadline, published)
@@ -355,14 +353,14 @@ pub async fn generate(
         published_at: published,
         stories: validated.stories,
         evidence: selected,
-        coverage: store.coverage(window.previous, window.cutoff).await?,
+        coverage: store.coverage(window.previous, window.cutoff)?,
         corrections: Vec::new(),
     };
-    store.publish(&edition, &validated.fingerprints, run).await
+    store.publish(&edition, &validated.fingerprints, run)
 }
 
 pub async fn correction(
-    env: &Env,
+    config: &Config,
     store: &Store,
     mut edition: Edition,
     replacement: Draft,
@@ -375,10 +373,9 @@ pub async fn correction(
             "Correction requires the current revision and a specific explanation",
         ));
     }
-    let mut window =
-        time::for_date(NaiveDate::parse_from_str(&edition.date, "%Y-%m-%d").map_err(error)?)?;
+    let mut window = time::daily(edition.cutoff)?;
     window.verification = edition.verification;
-    let history = store.history_before(&edition.date).await?;
+    let history = store.history_before(&edition.date)?;
     let old_events: HashSet<_> = edition
         .stories
         .iter()
@@ -394,7 +391,7 @@ pub async fn correction(
     }
     let validated = validate(replacement, &edition.evidence, &history, &window)?;
     audit(
-        env,
+        config,
         store,
         run,
         &validated,
@@ -410,12 +407,9 @@ pub async fn correction(
         reason: reason.into(),
         previous_revision: expected_revision,
     });
-    store
-        .correct(&edition, expected_revision, reason, &validated.fingerprints)
-        .await?;
+    store.correct(&edition, expected_revision, reason, &validated.fingerprints)?;
     let saved = store
-        .edition(Some(&edition.date), None)
-        .await?
+        .edition(Some(&edition.date), None)?
         .ok_or_else(|| error("Correction was not persisted"))?;
     if serde_json::to_string(&saved).map_err(error)?
         != serde_json::to_string(&edition).map_err(error)?
@@ -431,7 +425,7 @@ mod tests {
 
     #[test]
     fn scheduled_and_verification_drafts_share_diversity_rules_and_relevance_order() {
-        let mut window = time::for_date(NaiveDate::from_ymd_opt(2026, 10, 23).unwrap()).unwrap();
+        let mut window = time::daily(1792751400).unwrap();
         let categories = [
             "ai",
             "ai",
@@ -450,7 +444,7 @@ mod tests {
                 source_id: "feed".into(),
                 title: format!("Event {i}"),
                 published: Some(crate::types::SourceDate::Day(
-                    NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+                    chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
                 )),
                 updated: None,
                 first_seen: window.cutoff - 100,
@@ -509,7 +503,7 @@ mod tests {
             source_id: "feed".into(),
             title: "Advisory".into(),
             published: Some(crate::types::SourceDate::Day(
-                NaiveDate::from_ymd_opt(2026, 10, 22).unwrap(),
+                chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap(),
             )),
             updated: None,
             first_seen: 100,

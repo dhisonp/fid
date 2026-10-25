@@ -1,5 +1,0 @@
-# Copy to .dev.vars. Never put these in web/ or commit real values.
-# Used for both Grok summarization and web search.
-GROK_API_KEY=
-# Local operator endpoints also require this bearer token.
-ADMIN_TOKEN=

@@ -1,132 +1,158 @@
 # Fid
 
-A daily briefing for engineers and technology leads to stay current with the tech scene and grow as engineers. Fid publishes one feed of nine stories, ranked by relevance, with short summaries and links to originating sources.
+A daily briefing for engineers and technology leads. Fid publishes one feed of nine stories, ranked by relevance, with short summaries and links to originating sources.
 
-## Run locally
+The React reader runs on Cloudflare's free static hosting. A native Rust program collects sources and generates one edition per day in GitHub Actions. Page visits never start collection, generation, or model calls. No Workers Paid subscription, D1 database, or R2 bucket is required.
 
-From the repository root:
+**Hosting can stay free; xAI is still a paid API.** The existing Grok search, generation, and independent audit require your `GROK_API_KEY` and available xAI credit. This repository does not provide a free model service. Running checks, building, and deploying without generation make no model calls.
 
-```sh
-npm run dev
-```
+## Deploy
 
-Open **http://localhost:8787**. This command applies local database migrations, builds the app, and serves the news feed. Your saved edition persists between restarts in `.wrangler/state`. Stop with **Ctrl+C**.
+Requires Node 24+, Python 3.11+, stable Rust, a GitHub repository, and a Cloudflare account. Use a private repository if the archived sources and internal editorial history should remain private: the `fid-data` branch stores both. Only the exported reader files are deployed to Cloudflare.
 
-For a new checkout, complete the first-time setup below. If there is no saved edition, generate one using the local publication commands below.
-
-For frontend hot reload, keep the Worker running and run `npm run dev:web` in another terminal; open the Vite URL it prints.
-
-## First-time setup
-
-Requires Node 24+, Python 3.11+, stable Rust, and network access to package registries, originating sources, and xAI.
+Install and verify locally:
 
 ```sh
 npm ci
 python3 -m pip install -r requirements-dev.txt
 rustup component add rustfmt clippy
-rustup target add wasm32-unknown-unknown
-cargo install worker-build --locked
 cargo install cargo-audit --locked
-cp .dev.vars.example .dev.vars
+npm run check
+npm test
+npm run build
+npm run verify:runtime
+npm run audit
 ```
 
-Set `GROK_API_KEY` and an `ADMIN_TOKEN` of at least 24 characters in `.dev.vars`. Never commit real secrets. `wrangler.toml` configures the model, endpoint, and optional token prices; the model must support JSON chat responses and Responses API `web_search` and `x_search`. Blank prices mean unknown cost, and search tool charges remain unpriced.
+No WebAssembly target or `worker-build` installation is needed. The initial build exports an honest empty feed until a complete edition is generated.
+
+Push this repository to GitHub. If it has no remote yet, the GitHub CLI can create a private repository:
+
+```sh
+gh auth login
+gh repo create fid --private --source=. --remote=origin --push
+```
+
+If a repository already exists, configure its remote and push your default branch instead. GitHub runs scheduled workflows from the default branch.
+
+Create a Cloudflare API token with **Account → Workers Scripts → Edit**, scoped to the account hosting Fid. Copy your account ID from the Cloudflare dashboard. Configure these in the GitHub repository:
+
+```sh
+gh secret set CLOUDFLARE_API_TOKEN
+gh secret set GROK_API_KEY
+gh variable set CLOUDFLARE_ACCOUNT_ID --body 'YOUR_CLOUDFLARE_ACCOUNT_ID'
+```
+
+The secret commands prompt for values; do not paste keys into source files or frontend environment variables. The Worker name defaults to `fid` in `wrangler.toml`; change it if that name is already used in your account. If your Cloudflare account has no `workers.dev` subdomain yet, initialize it with the local deployment command below before using CI.
+
+To deploy the reader immediately without making model calls:
+
+```sh
+gh workflow run publish.yml -f generate=false
+gh run list --workflow publish.yml --limit 1
+gh run watch
+```
+
+To collect sources and publish the first edition now:
+
+```sh
+gh workflow run publish.yml -f generate=true
+gh run watch
+```
+
+The workflow prints the deployed `https://fid.<your-subdomain>.workers.dev` address. It also runs automatically once a day at **11:37 UTC**, with no strict start-time guarantee. This is 07:37 in New York during daylight saving time and 06:37 during standard time. The edition date follows `America/New_York`. Re-running generation for a date that is already published skips collection and model calls, then can retry deployment.
+
+For a direct local deployment:
+
+```sh
+npx wrangler login
+npm run deploy
+```
+
+This uses editions in local `.fid/`, so use the GitHub workflow for production after it has accumulated history. To restore production state before a local deployment, run `python3 scripts/publication_state.py prepare .fid` from a clean checkout where `.fid` does not exist.
+
+The static site itself has no Worker compute, database, object-storage, or cron billing. Daily Actions jobs have a 30-minute timeout (at most 930 runner minutes in a 31-day month for scheduled runs). GitHub Free includes 2,000 standard runner minutes per month for private repositories, shared with your other workflows and repositories; standard public-repository runners are free. CI and manual runs also consume private-repository minutes. Keep paid Actions usage disabled or set a zero spending budget in GitHub billing settings if you need a hard spending boundary. Public repository schedules can be disabled by GitHub after 60 days without activity; re-enable the workflow if needed. No deployment command upgrades either account to a paid plan.
+
+## Run locally
+
+```sh
+npm run dev
+```
+
+Open **http://localhost:8787**. This builds the reader, exports saved editions, and serves the same static assets used in production. Stop with **Ctrl+C**. For frontend hot reload, run `npm run dev:web` in another terminal after building; keep `npm run dev` running so Vite can proxy edition data to the local static server.
+
+To generate a local edition, configure the runner environment:
+
+```sh
+cp .env.example .env
+```
+
+Fill in `GROK_API_KEY` in `.env`, then load it into your shell and run:
+
+```sh
+set -a
+. ./.env
+set +a
+npm run edition:daily
+npm run build
+```
+
+Collection and generation take several minutes and make paid xAI requests. There is no local-verification edition or fixed publication hour: a successful run publishes today's daily edition. A fresh directory can be used for isolated runs:
+
+```sh
+cargo run --release --locked -- daily --state /tmp/fid-local
+cargo run --locked -- export --state /tmp/fid-local --out web/dist
+```
+
+`npm run build` uses `.fid` by default. Never point the deployment at the runner's state directory; only `web/dist` is public.
+
+## Daily publication
+
+The workflow checks out the application and restores the separate `fid-data` branch. That branch contains a versioned state manifest, immutable edition revisions, and archived originating documents. SQLite rebuilds its index from those files in each fresh runner. History survives workflow-artifact expiration and cache eviction. Failed reads, corrupt archives, and unsupported state versions stop the run rather than reset history.
+
+Once a day, the runner polls all configured feeds, observes the first ten Hacker News top stories and six new stories, and performs supplementary web and X searches. Feed collection inspects up to twelve entries per feed. Collection is a daily snapshot, not continuous monitoring; coverage records show failed sources without claiming hourly coverage. The evidence cutoff is captured after collection, and the freshness window is the preceding 24 hours.
+
+The same Rust editorial rules select and validate nine stories, request an independent factual audit, and recheck the selected sources. Only a complete validated edition can commit. A failed attempt leaves the previous edition available, or an honest empty state before the first publication. The frontend recalculates stale status from New York's current date even if scheduled execution fails completely.
+
+GitHub concurrency serializes publication jobs. SQLite transactions enforce publication ownership, deadlines, and revision consistency. The workflow saves publication history before deploying, so a deployment failure can be retried without regenerating an edition. Git pushes never force-overwrite the state branch. A scheduled job that fails generation still deploys the previous saved edition and reports failure in Actions. Corrective revisions already in saved state remain available at their original permalinks.
+
+A static deployment contains the React app, `data/latest.json`, dated editions and revisions, source metadata, and evidence referenced by committed editions. Internal story categories, claims, scoring, model requests, and unpublished sources are excluded from reader stories. Build and runtime checks make no model calls and do not establish live editorial output quality.
 
 ## Editorial behavior
 
-- At most three stories are AI-specific, including AI-focused tooling, infrastructure, research, policy, and acquisitions.
-- At least three non-AI stories cover developer tooling, infrastructure, substantive engineering articles, or studies combined. Selection favors a mix within that minimum.
-- The remaining slots are flexible, favoring engineering usefulness, technical depth and lasting significance. Acquisitions, emerging technologies, licensing, and platform pricing or subscription changes qualify through concrete effects on the technology ecosystem. Unused AI slots are flexible too.
-- Legal and regulatory stories are exceptional and require evidenced consequences across the broader technology industry. Local or niche-sector compliance, employee disputes, gossip and sensational breaking news do not qualify merely through a connection to technology, privacy or security.
-- Hacker News and X discovery receive a modest preference when engineering value and evidence quality are comparable; popularity never substitutes for relevance or factual support.
-- Internal topics support selection and diversity checks. The reader has no category navigation, and reader stories omit internal classifications, claims, scores, and research inspection records.
-
-Every story needs a score of at least 70, fetched originating evidence, and supported claims. Generation produces one draft followed by an independent factual audit; selected sources are rechecked before publication. Research requires full inspectable methods, results, and limitations, rather than an abstract alone. PDF extraction and research artifact execution are unsupported.
-
-Stories retain original publication dates and distinguish new reporting, material updates, carryovers, late discoveries, and older technical work. Insufficient evidence or failed checks withhold the edition; readers keep the previous edition with a delay notice, or see an empty state before the first publication.
+- Exactly nine distinct stories, ranked for engineering usefulness, technical depth, novelty, evidence, and lasting significance.
+- At most three AI-specific stories, regardless of their other consequences.
+- At least three non-AI stories covering developer tooling, infrastructure, substantive engineering articles, or studies combined. Remaining slots are flexible.
+- Hacker News and X discovery receive a modest preference when engineering value and evidence quality are comparable. Discussions and search results are never factual evidence.
+- Legal and regulatory coverage is exceptional and requires evidenced consequences across the broader technology industry. Exclude narrowly local compliance, employee disputes, gossip, and sensational news without engineering value.
+- Every story needs a score of at least 70, fetched originating evidence, supported claims, and original publication dates. Research needs inspectable methods, results, and limitations; abstracts alone are insufficient.
+- Keep original evidence dates and distinguish new reporting, material updates, carryovers, late discoveries, and older technical work. Never lower publication checks to fill the feed.
 
 ## Architecture
 
-The Rust Worker runs on Cloudflare Workers, using D1 for publication state and private R2 storage for archived sources. React, TypeScript, and Vite provide the reader.
+| Location                                                        | Responsibility                                                      |
+| --------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `pipeline/src/main.rs`, `config.rs`, `time.rs`                  | Native daily runner, validated configuration, daily windows         |
+| `pipeline/src/collect.rs`, `sources.rs`, `http.rs`              | Bounded feed/search discovery, safe HTTP, source extraction         |
+| `pipeline/src/editorial.rs`, `rules.rs`, `model.rs`             | Selection, validation, model calls, independent audit, rechecks     |
+| `pipeline/src/store.rs`, `sql/`, `migrations/`                  | SQLite transactions, immutable edition snapshots, evidence archives |
+| `pipeline/src/export.rs`                                        | Public edition and evidence exports                                 |
+| `.github/workflows/publish.yml`, `scripts/publication_state.py` | Daily schedule, durable Git history, static deployment              |
+| `web/src/`, `wrangler.toml`                                     | Unchanged reader UI and free static hosting                         |
 
-| Location                                          | Responsibility                                                                  |
-| ------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `worker/src/lib.rs`, `time.rs`                    | API routes, scheduled jobs, leases, and New York publication windows            |
-| `worker/src/collect.rs`, `sources.rs`, `http.rs`  | Feed/search discovery, bounded source fetching, and evidence extraction         |
-| `worker/src/editorial.rs`, `rules.rs`, `model.rs` | Selection, validation, model requests, factual audit, and source rechecks       |
-| `worker/src/store.rs`, `sql/`, `migrations/`      | Evidence archives, database queries, atomic publication, and retained revisions |
-| `web/src/`                                        | Reader rendering, response validation, and edition permalinks                   |
+The reader retains its current layout, five-minute refresh, original dates, and edition/revision permalinks. Its data adapter maps reader requests to static JSON. The hosted app has no admin API or live database. Runner configuration belongs in environment variables or GitHub secrets and variables, never the frontend.
 
-A quarter-hour cron distributes feed checks across the hour and observes the first ten Hacker News top stories and six new stories. Supplementary web searches and two dedicated X searches discover originating documents linked by engineers and maintainers. X discovery enables both `x_search` and `web_search` so Grok can follow links to inspectable sources. Discussions and search results themselves are not factual evidence. Candidate selection reserves room for up to ten Hacker News and eight X-discovered documents, versus six per other discovery source, within the existing 120-document budget. Generation starts at 06:30 `America/New_York` and retries until 07:30, accounting for daylight saving time. Reader traffic never starts collection or generation.
-
-D1 checks generation leases and deadlines against its own clock. Publication commits the edition, revision, history, and evidence references atomically. Corrections retain earlier revisions and preserve event identities. Only evidence referenced by a committed edition is available through the evidence API.
-
-## Local publication details
-
-To collect sources and publish a fresh local edition, start the server with:
-
-```sh
-npm run dev:verify
-```
-
-In another terminal in the repository:
-
-```sh
-export ADMIN_TOKEN='the same ADMIN_TOKEN you set in .dev.vars'
-npm run verify:live
-```
-
-Generation takes several minutes and makes paid xAI requests. The reader refreshes every five minutes; reload to see the result immediately. Source or audit failures leave the previous edition available. Local cron jobs do not run automatically.
-
-`npm run dev:verify` enables publication outside the scheduled window. Verification requires localhost, uses the preceding 24 hours, and marks the edition with `verification: true`. It uses the same nine-story rules and full collection scope as scheduled publication, with `medium` rather than `high` reasoning.
-
-`npm run verify:live` collects originating sources, generates and audits a draft, rechecks evidence, and writes `artifacts/live-verification.json`. Set `FID_ORIGIN` if the Worker uses a different address. A second edition for the same date returns `409`; use a fresh `--persist-to` directory for both migrations and the dev server to repeat.
-
-The local verification endpoint also accepts a JSON draft containing `stories`. Supplied drafts still pass validation, independent audit, source rechecks, and atomic publication against locally archived evidence.
+Optional repository variables `MODEL_NAME`, `MODEL_INPUT_USD_PER_MILLION`, and `MODEL_OUTPUT_USD_PER_MILLION` configure the model and token cost estimates. The model must support JSON chat responses and Responses API `web_search` and `x_search`. Blank prices mean unknown cost; search tool charges remain unpriced.
 
 ## Checks
 
 ```sh
 npm run check           # formatting, lint, and TypeScript
-npm test                # Rust rules/editorial logic, production SQL, and API parsing
-npm run build           # reader and release Wasm Worker
-npm run verify:runtime  # deployment packaging dry run; does not deploy
+npm test                # Rust, native publication, production SQL, Git state, reader data
+npm run build           # reader and static edition exports; no model calls
+npm run build:pipeline  # optimized native Rust executable
+npm run verify:runtime  # static deployment packaging dry run; does not deploy
 npm run audit           # Rust and production npm dependency advisories
 ```
 
-`npm run format` applies formatting. `npm run test:offline` checks standalone Rust rules, storage SQL, API parsing, and rustfmt without downloading dependencies. CI runs the full checks, builds, packaging dry run, and dependency audits.
-
-For runtime verification, exercise the built Worker with local D1/R2 state and check the reader at mobile and desktop widths. Builds, stored-edition reads, and browser checks do not establish fresh model output quality or successful deployed scheduled execution.
-
-## API
-
-| Public route                             | Response                                                                 |
-| ---------------------------------------- | ------------------------------------------------------------------------ |
-| `/api/latest`                            | Latest edition, availability/stale status, and expected publication date |
-| `/api/editions`                          | Recent edition dates and revision metadata                               |
-| `/api/editions/YYYY-MM-DD[/revisions/N]` | Edition or retained revision                                             |
-| `/api/evidence/ID`                       | Archived source referenced by a published edition                        |
-| `/api/sources`                           | Configured source list                                                   |
-
-Reader permalinks use `/editions/YYYY-MM-DD[/revisions/N]`. Operator routes under `/api/admin/` require `Authorization: Bearer <ADMIN_TOKEN>` and provide collection, scheduled generation, local verification, usage, and corrections; their request contracts are in `worker/src/lib.rs`.
-
-## Deployment
-
-Configure a Cloudflare Workers paid plan for the CPU budget in `wrangler.toml`, then create the storage resources:
-
-```sh
-npx wrangler login
-npx wrangler d1 create fid
-npx wrangler r2 bucket create fid-evidence
-```
-
-Replace the placeholder D1 database ID, configure the model and token prices, and keep `LOCAL_VERIFICATION=false` in deployment. After local runtime and real-source verification:
-
-```sh
-npx wrangler secret put GROK_API_KEY
-npx wrangler secret put ADMIN_TOKEN
-npx wrangler d1 migrations apply fid --remote
-npm run deploy
-```
-
-Deployment publishes assets, Worker code, bindings, and cron configuration. Check the public reader, scheduled execution, first complete edition, coverage, and usage after deploying.
+`npm run format` applies formatting. `npm run test:offline` checks standalone Rust rules, storage SQL, Git publication state, reader parsing, and rustfmt without downloading dependencies. CI runs the full checks, build, packaging dry run, and dependency audits.

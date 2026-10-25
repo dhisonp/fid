@@ -1,40 +1,7 @@
 name = "fid"
-main = "worker/build/index.js"
 compatibility_date = "2026-10-23"
-
-[build]
-command = "npm run build"
+workers_dev = true
 
 [assets]
 directory = "web/dist"
-binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*"]
-
-[triggers]
-crons = ["*/15 * * * *"]
-
-[limits]
-cpu_ms = 300000
-
-[[d1_databases]]
-binding = "DB"
-database_name = "fid"
-database_id = "00000000-0000-0000-0000-000000000000"
-migrations_dir = "migrations"
-
-[[r2_buckets]]
-binding = "EVIDENCE"
-bucket_name = "fid-evidence"
-
-[vars]
-LOCAL_VERIFICATION = "false"
-MODEL_API_URL = "https://api.x.ai/v1/chat/completions"
-# Shared by summarization and discovery; must support web_search and x_search.
-MODEL_NAME = "grok-4.7"
-# Set provider prices per million tokens; blank means unknown, never free.
-MODEL_INPUT_USD_PER_MILLION = ""
-MODEL_OUTPUT_USD_PER_MILLION = ""
-
-[observability]
-enabled = true

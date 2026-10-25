@@ -19,11 +19,9 @@ jobs:
         run: |
           rustup update stable
           rustup component add rustfmt clippy
-          rustup target add wasm32-unknown-unknown
-          cargo install worker-build --locked
           cargo install cargo-audit --locked
       - name: Install frontend dependencies
-        run: npm install
+        run: npm ci
       - run: npm run check
       - run: npm test
       - run: npm run build

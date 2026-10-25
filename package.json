@@ -4,12 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run db:local && wrangler dev --test-scheduled",
+    "dev": "npm run build && wrangler dev",
     "dev:web": "vite --config web/vite.config.ts",
-    "dev:verify": "npm run dev -- --var LOCAL_VERIFICATION:true",
     "build:web": "tsc -p web/tsconfig.json && vite build --config web/vite.config.ts",
-    "build:worker": "cd worker && worker-build --release",
-    "build": "npm run build:web && npm run build:worker",
+    "build": "npm run build:web && npm run export",
     "lint": "npm run lint:web && npm run lint:python && npm run lint:rust",
     "lint:web": "eslint . --max-warnings=0",
     "lint:python": "ruff check .",
@@ -20,11 +18,12 @@
     "check": "npm run format:check && npm run lint && npm run typecheck",
     "test": "cargo test --workspace && python3 -m unittest discover -s tests -v && node --experimental-strip-types --test tests/api.test.ts",
     "test:offline": "python3 scripts/check_offline.py",
-    "db:local": "wrangler d1 migrations apply fid --local",
-    "verify:runtime": "wrangler deploy --dry-run --outdir artifacts/worker",
-    "verify:live": "node scripts/live-check.mjs",
+    "verify:runtime": "wrangler deploy --dry-run --outdir artifacts/site",
     "audit": "cargo audit && npm audit --omit=dev",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "build:pipeline": "cargo build --release --locked",
+    "export": "cargo run --locked -- export",
+    "edition:daily": "cargo run --release --locked -- daily"
   },
   "dependencies": {
     "react": "19.2.8",

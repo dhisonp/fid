@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFeed } from '../web/src/api.ts';
+import { currentFeed, loadFeed, parseFeed } from '../web/src/api.ts';
 
 function feed() {
   return {
@@ -151,4 +151,65 @@ test('the unified feed preserves the relevance order across all nine stories', (
     },
   });
   assert.deepEqual(parsed.edition?.stories, stories);
+});
+
+test('static latest editions become stale without another deployment', () => {
+  const value = parseFeed({
+    ...feed(),
+    status: 'available',
+    edition: edition(),
+  });
+  assert.equal(
+    currentFeed(value, true, new Date('2026-10-24T03:59:00Z')).status,
+    'available',
+  );
+  const nextDay = currentFeed(value, true, new Date('2026-10-24T04:00:00Z'));
+  assert.equal(nextDay.status, 'stale');
+  assert.equal(nextDay.expected_date, '2026-10-24');
+  assert.equal(
+    currentFeed(value, false, new Date('2026-10-25T12:00:00Z')).status,
+    'available',
+  );
+  assert.equal(
+    currentFeed(parseFeed(feed()), true, new Date()).status,
+    'unavailable',
+  );
+});
+
+test('reader requests static edition files and bypasses browser caches', async (t) => {
+  const requests: string[] = [];
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async (path: string, options: RequestInit) => {
+      requests.push(path);
+      assert.equal(options.cache, 'no-store');
+      return Response.json(feed());
+    },
+  );
+  const signal = new AbortController().signal;
+  await loadFeed('/api/latest', signal);
+  await loadFeed('/api/editions/2026-10-23', signal);
+  await loadFeed('/api/editions/2026-10-23/revisions/2', signal);
+  await assert.rejects(loadFeed('/api/not-found', signal), /not available/);
+  assert.deepEqual(requests, [
+    '/data/latest.json',
+    '/data/editions/2026-10-23.json',
+    '/data/editions/2026-10-23/revisions/2.json',
+  ]);
+});
+
+test('SPA fallbacks cannot masquerade as edition JSON', async (t) => {
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async () =>
+      new Response('<html>reader</html>', {
+        headers: { 'Content-Type': 'text/html' },
+      }),
+  );
+  await assert.rejects(
+    loadFeed('/api/editions/2026-10-23', new AbortController().signal),
+    /not available/,
+  );
 });

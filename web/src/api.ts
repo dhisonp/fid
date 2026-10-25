@@ -182,12 +182,48 @@ export async function loadFeed(
   path: string,
   signal: AbortSignal,
 ): Promise<Feed> {
-  const response = await fetch(path, { signal });
-  if (!response.ok)
+  const match =
+    /^\/api\/editions\/(\d{4}-\d{2}-\d{2})(?:\/revisions\/(\d+))?$/.exec(path);
+  const asset =
+    path === '/api/latest'
+      ? '/data/latest.json'
+      : match
+        ? `/data/editions/${match[1]}${match[2] ? `/revisions/${match[2]}` : ''}.json`
+        : null;
+  if (asset === null) throw new Error('That edition is not available.');
+  const response = await fetch(asset, { signal, cache: 'no-store' });
+  if (
+    !response.ok ||
+    !response.headers.get('Content-Type')?.includes('application/json')
+  )
     throw new Error(
-      response.status === 404
+      response.status === 404 || response.ok
         ? 'That edition is not available.'
         : 'The briefing could not be loaded. Please try again.',
     );
-  return parseFeed(await response.json());
+  return currentFeed(
+    parseFeed(await response.json()),
+    path === '/api/latest',
+    new Date(),
+  );
+}
+
+export function currentFeed(feed: Feed, latest: boolean, now: Date): Feed {
+  const expectedDate = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+  return {
+    ...feed,
+    expected_date: expectedDate,
+    checked_at: Math.floor(now.getTime() / 1000),
+    status:
+      feed.edition === null
+        ? 'unavailable'
+        : latest && feed.edition.date < expectedDate
+          ? 'stale'
+          : 'available',
+  };
 }

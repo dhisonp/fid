@@ -11,7 +11,7 @@ commands = [
         'rustc',
         '--edition=2021',
         '--test',
-        'worker/src/rules.rs',
+        'pipeline/src/rules.rs',
         '-o',
         '.cache/rules-tests',
     ],

@@ -1,0 +1,74 @@
+name: Publish Fid
+
+on:
+  schedule:
+    - cron: '37 11 * * *'
+  workflow_dispatch:
+    inputs:
+      generate:
+        description: Collect sources and generate today's edition
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fid-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check deployment configuration
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo 'Set the CLOUDFLARE_API_TOKEN repository secret'; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo 'Set the CLOUDFLARE_ACCOUNT_ID repository variable'; exit 1; }
+      - name: Install Rust
+        run: rustup update stable
+      - uses: actions/cache@v4
+        with:
+          path: target
+          key: fid-rust-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - run: npm ci
+      - run: cargo build --release --locked
+      - name: Restore publication history
+        run: python3 scripts/publication_state.py prepare .fid
+      - name: Generate daily edition
+        id: generation
+        if: github.event_name == 'schedule' || inputs.generate
+        continue-on-error: true
+        env:
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+          MODEL_NAME: ${{ vars.MODEL_NAME || 'grok-4.7' }}
+          MODEL_INPUT_USD_PER_MILLION: ${{ vars.MODEL_INPUT_USD_PER_MILLION }}
+          MODEL_OUTPUT_USD_PER_MILLION: ${{ vars.MODEL_OUTPUT_USD_PER_MILLION }}
+        run: target/release/fid daily
+      - name: Build static reader and export saved editions
+        run: |
+          npm run build:web
+          target/release/fid export
+      - name: Save publication history before deployment
+        run: python3 scripts/publication_state.py save .fid
+      - name: Verify deployment package
+        run: npm run verify:runtime
+      - name: Deploy static reader
+        run: npx wrangler deploy
+      - name: Report withheld edition
+        if: steps.generation.outcome == 'failure'
+        run: |
+          echo 'Generation failed. The reader still serves the previous complete edition, or its initial empty state. See generation logs.'
+          exit 1

@@ -4,6 +4,7 @@ build/
 web/dist/
 .cache/
 .wrangler/
+.fid/
 .ruff_cache/
 artifacts/
 package-lock.json

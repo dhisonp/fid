@@ -5,6 +5,7 @@ web/dist/
 .wrangler/
 .cache/
 .dev.vars
+.fid/
 .env
 !*.example
 artifacts/
