@@ -30,7 +30,7 @@ bucket_name = "fid-evidence"
 [vars]
 LOCAL_VERIFICATION = "false"
 MODEL_API_URL = "https://api.x.ai/v1/chat/completions"
-# Shared by summarization and web search; must support the web_search tool.
+# Shared by summarization and discovery; must support web_search and x_search.
 MODEL_NAME = "grok-4.7"
 # Set provider prices per million tokens; blank means unknown, never free.
 MODEL_INPUT_USD_PER_MILLION = ""

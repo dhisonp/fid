@@ -137,30 +137,30 @@ class StorageTests(unittest.TestCase):
             self.db.execute('SELECT current_revision FROM editions').fetchone()[0], 2
         )
 
-    def test_cutoff_snapshot_retains_original_version_and_bounds_sources(self):
-        def doc(identifier, url, retrieved, first_seen=10, source='origin'):
-            self.db.execute(
-                'INSERT INTO documents VALUES(?,?,?,?,?,?,?,?,?,?)',
-                (
-                    identifier,
-                    url,
-                    source,
-                    first_seen,
-                    retrieved,
-                    None,
-                    None,
-                    identifier,
-                    identifier,
-                    json.dumps({'id': identifier}),
-                ),
-            )
+    def document(self, identifier, url, retrieved, first_seen=10, source='origin'):
+        self.db.execute(
+            'INSERT INTO documents VALUES(?,?,?,?,?,?,?,?,?,?)',
+            (
+                identifier,
+                url,
+                source,
+                first_seen,
+                retrieved,
+                None,
+                None,
+                identifier,
+                identifier,
+                json.dumps({'id': identifier}),
+            ),
+        )
 
-        doc('before', 'https://example.com/a', 20)
-        doc('after', 'https://example.com/a', 101)
-        doc('unseen', 'https://example.com/b', 20, first_seen=101)
-        doc('other', 'https://other.example.com/c', 10, source='other')
+    def test_cutoff_snapshot_retains_original_version_and_bounds_sources(self):
+        self.document('before', 'https://example.com/a', 20)
+        self.document('after', 'https://example.com/a', 101)
+        self.document('unseen', 'https://example.com/b', 20, first_seen=101)
+        self.document('other', 'https://other.example.com/c', 10, source='other')
         for i in range(15):
-            doc(
+            self.document(
                 f'bounded-{i}',
                 f'https://bounded.example.com/{i}',
                 30 + i,
@@ -173,6 +173,26 @@ class StorageTests(unittest.TestCase):
         self.assertNotIn('after', ids)
         self.assertNotIn('unseen', ids)
         self.assertEqual(sum(item.startswith('bounded-') for item in ids), 6)
+
+    def test_community_discovery_gets_more_room_within_total_budget(self):
+        for source in ['hacker-news', 'x-search'] + [f'feed-{i}' for i in range(20)]:
+            for i in range(15):
+                self.document(
+                    f'{source}-{i}',
+                    f'https://example.com/{source}/{i}',
+                    30 + i,
+                    source=source,
+                )
+        rows = self.db.execute(self.sql('candidates.sql'), (100, 100, 0)).fetchall()
+        ids = [json.loads(row[0])['id'] for row in rows]
+        self.assertEqual(len(ids), 120)
+        for source, limit in [('hacker-news', 10), ('x-search', 8)]:
+            selected = {item for item in ids if item.startswith(f'{source}-')}
+            self.assertEqual(selected, {f'{source}-{i}' for i in range(15 - limit, 15)})
+        for i in range(20):
+            count = sum(item.startswith(f'feed-{i}-') for item in ids)
+            self.assertGreater(count, 0)
+            self.assertLessEqual(count, 6)
 
 
 if __name__ == '__main__':

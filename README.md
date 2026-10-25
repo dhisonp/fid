@@ -30,7 +30,7 @@ cargo install cargo-audit --locked
 cp .dev.vars.example .dev.vars
 ```
 
-Set `GROK_API_KEY` and an `ADMIN_TOKEN` of at least 24 characters in `.dev.vars`. Never commit real secrets. `wrangler.toml` configures the model, endpoint, and optional token prices; the model must support JSON chat responses and Responses API `web_search`. Blank prices mean unknown cost, and search tool charges remain unpriced.
+Set `GROK_API_KEY` and an `ADMIN_TOKEN` of at least 24 characters in `.dev.vars`. Never commit real secrets. `wrangler.toml` configures the model, endpoint, and optional token prices; the model must support JSON chat responses and Responses API `web_search` and `x_search`. Blank prices mean unknown cost, and search tool charges remain unpriced.
 
 ## Editorial behavior
 
@@ -57,7 +57,7 @@ The Rust Worker runs on Cloudflare Workers, using D1 for publication state and p
 | `worker/src/store.rs`, `sql/`, `migrations/`      | Evidence archives, database queries, atomic publication, and retained revisions |
 | `web/src/`                                        | Reader rendering, response validation, and edition permalinks                   |
 
-A quarter-hour cron distributes feed checks across the hour and observes Hacker News. Supplementary searches discover originating documents; search results themselves are not factual evidence. Generation starts at 06:30 `America/New_York` and retries until 07:30, accounting for daylight saving time. Reader traffic never starts collection or generation.
+A quarter-hour cron distributes feed checks across the hour and observes the first ten Hacker News top stories and six new stories. Supplementary web searches and two dedicated X searches discover originating documents linked by engineers and maintainers. X discovery enables both `x_search` and `web_search` so Grok can follow links to inspectable sources. Discussions and search results themselves are not factual evidence. Candidate selection reserves room for up to ten Hacker News and eight X-discovered documents, versus six per other discovery source, within the existing 120-document budget. Generation starts at 06:30 `America/New_York` and retries until 07:30, accounting for daylight saving time. Reader traffic never starts collection or generation.
 
 D1 checks generation leases and deadlines against its own clock. Publication commits the edition, revision, history, and evidence references atomically. Corrections retain earlier revisions and preserve event identities. Only evidence referenced by a committed edition is available through the evidence API.
 
